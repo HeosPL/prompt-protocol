@@ -63,4 +63,4 @@ https://github.com/HeosPL/prompt-protocol/archive/refs/heads/main.zip
  * ----------------------------------------------------------------------------
 ## Support
 
-If you encounter any issues or have suggestions for improvements, please open an issue on the [GitHub repository](https://github.com/twoj-login/prompt-protocol).
+If you encounter any issues or have suggestions for improvements, please open an issue on the [GitHub repository](https://github.com/HeosPL/prompt-protocol).
