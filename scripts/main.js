@@ -1,5 +1,28 @@
 // main.js – Prompt Protocol with GM Tools integration
 
+// Rejestrujemy globalne API GMTools już na etapie init
+Hooks.once("init", () => {
+  window.GMTools = window.GMTools || {
+    tools: [],
+    /**
+     * Registers a new GM tool.
+     * @param {Object} tool - { name, title, icon, onClick }
+     */
+    registerTool: function(tool) {
+      this.tools.push(tool);
+    }
+  };
+
+  // Rejestrujemy nasze narzędzie Prompt Protocol w GMTools
+  GMTools.registerTool({
+    name: "prompt-protocol",
+    title: "Run Skill Test",
+    icon: "fas fa-dice-d20",
+    onClick: () => showPromptDialog()
+  });
+});
+
+
 // Function to show the prompt dialog for running a skill test
 async function showPromptDialog() {
   const actor = game.user.character;
@@ -158,31 +181,6 @@ ${detailedReport}
     speaker: ChatMessage.getSpeaker({ actor }),
     content: messageContent
   });
-});
-
-// Register GM Tools global API and our tool
-Hooks.once("ready", () => {
-  // Create a global GMTools API object if it doesn't exist
-  window.GMTools = window.GMTools || {
-    tools: [],
-    /**
-     * Registers a new GM tool.
-     * @param {Object} tool - { name, title, icon, onClick }
-     */
-    registerTool: function(tool) {
-      this.tools.push(tool);
-    }
-  };
-
-  // Register our Prompt Protocol tool under GMTools
-  GMTools.registerTool({
-    name: "prompt-protocol",
-    title: "Run Skill Test",
-    icon: "fas fa-dice-d20",
-    onClick: () => showPromptDialog()
-  });
-
-  console.log("GMTools API registered:", window.GMTools);
 });
 
 // Modify Scene Controls to include a "GM Tools" category populated by GMTools.tools
