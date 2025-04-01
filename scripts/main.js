@@ -22,7 +22,6 @@ Hooks.once("init", () => {
   });
 });
 
-
 // Function to show the prompt dialog for running a skill test
 async function showPromptDialog() {
   const actor = game.user.character;
@@ -51,6 +50,9 @@ async function showPromptDialog() {
         <label>Situational Description (optional):</label>
         <input type="text" id="flavor" placeholder="e.g. Escape via roof under fire"/>
       </div>
+      <div class="form-group">
+        <label><input type="checkbox" id="hideDv"/> Hide DV from players</label>
+      </div>
     </form>
   `;
   new Dialog({
@@ -63,15 +65,16 @@ async function showPromptDialog() {
           const skill = html.find("#skill").val();
           const dv = parseInt(html.find("#dv").val());
           const flavor = html.find("#flavor").val()?.trim() || "";
+          const hideDv = html.find("#hideDv").is(":checked");
           const message = `
-<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-flavor="${flavor}" data-actor-id="${actor.id}">
-  🎲 Test: <strong>${skill}</strong> (DV ${dv}) ${flavor ? `— <em>${flavor}</em>` : ""}
+<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}" data-actor-id="${actor.id}">
+  🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
   — Click to roll
 </button>
           `;
           ChatMessage.create({
             content: message,
-            flags: { "prompt-protocol": { skill, dv, flavor, actorId: actor.id } }
+            flags: { "prompt-protocol": { skill, dv, flavor, actorId: actor.id, hideDv } }
           });
         }
       },
@@ -88,6 +91,8 @@ document.addEventListener("click", async (event) => {
   const skillName = button.dataset.skill;
   const dv = parseInt(button.dataset.dv);
   const flavor = button.dataset.flavor;
+  // Interpret dataset.hidedv string as boolean
+  const hideDv = button.dataset.hidedv === "true";
   const actorId = button.dataset.actorId;
   const actor = game.actors.get(actorId) || game.user.character;
   if (!actor) {
@@ -172,7 +177,7 @@ document.addEventListener("click", async (event) => {
 
   const messageContent = `
 Test <strong>${skillName}</strong> rolled by <em>${actor.name}</em><br>
-Result: <strong>${finalTotal}</strong> vs DV <strong>${dv}</strong><br>
+Result: <strong>${finalTotal}</strong>${!hideDv ? ` vs DV <strong>${dv}</strong>` : ""}<br>
 ${resultText}<br>
 ${flavor ? `<em>${flavor}</em><br>` : ""}
 ${detailedReport}
