@@ -91,14 +91,14 @@ document.addEventListener("click", async (event) => {
   const skillName = button.dataset.skill;
   const dv = parseInt(button.dataset.dv);
   const flavor = button.dataset.flavor;
-  // Interpret dataset.hidedv string as boolean
   const hideDv = button.dataset.hidedv === "true";
-  const actorId = button.dataset.actorId;
-  const actor = game.actors.get(actorId) || game.user.character;
+  // Zawsze pobieramy postać przypisaną do klikającego użytkownika
+  const actor = game.user.character;
   if (!actor) {
     ui.notifications.warn("Character for roll not found!");
     return;
   }
+  // Reszta kodu pozostaje bez zmian...
   const skillItem = actor.items.find(i => i.name === skillName && i.type === "skill");
   if (!skillItem) {
     ui.notifications.error(`Skill not found: ${skillName}`);
@@ -187,6 +187,8 @@ ${detailedReport}
     content: messageContent
   });
 });
+
+
 
 // Modify Scene Controls to include a "GM Tools" category populated by GMTools.tools
 Hooks.on("getSceneControlButtons", (controls) => {
