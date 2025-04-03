@@ -37,7 +37,7 @@ async function showPromptDialog() {
   const content = `
     <form>
       <div class="form-group">
-        <label>Skill:</label>
+        <label>Skill TEST:</label>
         <select id="skill">
           ${skills.map(s => `<option value="${s}">${s}</option>`).join("")}
         </select>
@@ -92,19 +92,21 @@ document.addEventListener("click", async (event) => {
   const dv = parseInt(button.dataset.dv);
   const flavor = button.dataset.flavor;
   const hideDv = button.dataset.hidedv === "true";
-  // Zawsze pobieramy postać przypisaną do klikającego użytkownika
+  
+  // Zawsze pobieramy postać przypisaną do klikającego użytkownika – ignorujemy data-actor-id
   const actor = game.user.character;
   if (!actor) {
     ui.notifications.warn("Character for roll not found!");
     return;
   }
-  // Reszta kodu pozostaje bez zmian...
+  
   const skillItem = actor.items.find(i => i.name === skillName && i.type === "skill");
   if (!skillItem) {
     ui.notifications.error(`Skill not found: ${skillName}`);
     return;
   }
-  // Retrieve attribute and skill level data
+  
+  // Reszta kodu pozostaje bez zmian...
   const statKey = skillItem.system.stat;
   const statValue = actor.system.stats?.[statKey]?.value || 0;
   const skillValue = skillItem.system.level || 0;
@@ -136,13 +138,13 @@ document.addEventListener("click", async (event) => {
       return;
     }
   }
-
+  
   const finalTotal = rollResult?.resultTotal ?? 0;
   const success = finalTotal > dv;
   const resultText = success
     ? `<span style="color:green;">✔ SUCCESS</span>`
     : `<span style="color:red;">✘ FAILURE</span>`;
-
+  
   let detailedReport = "";
   if (rollResult && rollResult.initialRoll !== undefined) {
     const modsReport = (rollResult.mods && rollResult.mods.length)
@@ -174,7 +176,7 @@ document.addEventListener("click", async (event) => {
     </details>
     `;
   }
-
+  
   const messageContent = `
 Test <strong>${skillName}</strong> rolled by <em>${actor.name}</em><br>
 Result: <strong>${finalTotal}</strong>${!hideDv ? ` vs DV <strong>${dv}</strong>` : ""}<br>
