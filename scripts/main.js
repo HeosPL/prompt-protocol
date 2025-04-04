@@ -103,11 +103,23 @@ document.addEventListener("click", async (event) => {
   const hideDv = button.dataset.hidedv === "true";
 
   // Zamiast używać actorId z przycisku, bierzemy aktora przypisanego do gracza, który kliknął
-  const actor = game.user.character;
+  let actor = game.user.character;
+
   if (!actor) {
-    ui.notifications.warn("No character assigned to user.");
+    // Jeśli użytkownik to MG lub nie ma przypisanej postaci – użyj zaznaczonego tokena
+    const controlled = canvas.tokens.controlled;
+    if (controlled.length !== 1) {
+      ui.notifications.warn("Select a single token to roll skill test.");
+      return;
+    }
+    actor = controlled[0].actor;
+  }
+  
+  if (!actor) {
+    ui.notifications.error("No actor found for skill roll.");
     return;
   }
+  
 
   const skillItem = actor.items.find(i => i.name === skillName && i.type === "skill");
   if (!skillItem) {
