@@ -101,11 +101,11 @@ document.addEventListener("click", async (event) => {
   const dv = parseInt(button.dataset.dv);
   const flavor = button.dataset.flavor;
   const hideDv = button.dataset.hidedv === "true";
-  const actorId = button.dataset.actorId;
 
-  const actor = game.actors.get(actorId);
+  // Zamiast używać actorId z przycisku, bierzemy aktora przypisanego do gracza, który kliknął
+  const actor = game.user.character;
   if (!actor) {
-    ui.notifications.warn("Character not found!");
+    ui.notifications.warn("No character assigned to user.");
     return;
   }
 
@@ -198,6 +198,7 @@ ${detailedReport}
     ui.notifications.error("Error during roll: " + e);
   }
 });
+
 
 
 Hooks.on("getSceneControlButtons", (controls) => {
