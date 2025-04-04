@@ -18,8 +18,6 @@ async function getAllSystemSkills() {
   return CachedSkills;
 }
 
-// main.js – Prompt Protocol with GM Tools integration
-
 Hooks.once("init", () => {
   window.GMTools = window.GMTools || {
     tools: [],
@@ -37,8 +35,8 @@ Hooks.once("init", () => {
 });
 
 async function showPromptDialog() {
-  const skills = await getAllSystemSkills();
 
+  const skills = await getAllSystemSkills();
   if (!skills.length) {
     ui.notifications.error("No skills found.");
     return;
@@ -49,54 +47,50 @@ async function showPromptDialog() {
   const content = `
     <form>
       <div class="form-group">
-        <label for="skill">Select Skill:</label>
-        <select id="skill" name="skill">${skillOptions}</select>
+        <label>Skill:</label>
+        <select id="skill">${skillOptions}</select>
       </div>
       <div class="form-group">
-        <label for="flavor">Optional Description:</label>
-        <input type="text" id="flavor" name="flavor" placeholder="e.g. Climbing wall in the rain"/>
+        <label>DV:</label>
+        <input type="number" id="dv" value="15"/>
       </div>
       <div class="form-group">
-        <label for="dv">Difficulty Value (DV):</label>
-        <input type="number" id="dv" name="dv" value="13"/>
+        <label>Description (optional):</label>
+        <input type="text" id="flavor" placeholder="e.g. Under fire while climbing"/>
+      </div>
+      <div class="form-group">
+        <label><input type="checkbox" id="hideDv"/> Hide DV from players</label>
       </div>
     </form>
   `;
 
   new Dialog({
-    title: "Skill Test Prompt",
+    title: "Run Skill Test",
     content,
     buttons: {
       ok: {
         label: "Send to Chat",
-        callback: html => {
-          const skill = html.find('[name="skill"]').val();
-          const flavor = html.find('[name="flavor"]').val()?.trim() || "";
-          const dv = parseInt(html.find('[name="dv"]').val()) || 0;
+        callback: (html) => {
+          const skill = html.find("#skill").val();
+          const dv = parseInt(html.find("#dv").val());
+          const flavor = html.find("#flavor").val()?.trim() || "";
+          const hideDv = html.find("#hideDv").is(":checked");
 
-          const messageContent = `
-            <div class="skill-test-prompt">
-              <strong>Skill Test:</strong> ${skill}<br/>              
-              <strong>DV:</strong> ${dv}<br/>
-              <button class="skill-roll-button" 
-                      data-skill="${skill}" 
-                      
-                      data-dv="${dv}">Roll</button>
-            </div>
+          const message = `
+<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}">
+  🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
+  — Click to roll
+</button>
           `;
 
           ChatMessage.create({
-            user: game.user.id,
-            speaker: ChatMessage.getSpeaker(),
-            content: flavor ? messageContent + `<em>${flavor}</em>` : messageContent
+            content: message,
+            flags: { "prompt-protocol": { skill, dv, flavor, hideDv } }
           });
         }
       },
-      cancel: {
-        label: "Cancel"
-      }
-    },
-    default: "ok"
+      cancel: { label: "Cancel" }
+    }
   }).render(true);
 }
 
@@ -106,11 +100,13 @@ document.addEventListener("click", async (event) => {
 
   const skillName = button.dataset.skill;
   const dv = parseInt(button.dataset.dv);
-  const modifier = 0; // modifier removed
+  const flavor = button.dataset.flavor;
+  const hideDv = button.dataset.hidedv === "true";
+  const actorId = button.dataset.actorId;
 
-  const actor = game.user.character;
+  const actor = game.actors.get(actorId) || game.user.character;
   if (!actor) {
-    ui.notifications.warn("Character for roll not found!");
+    ui.notifications.warn("Character not found!");
     return;
   }
 
@@ -129,17 +125,17 @@ document.addEventListener("click", async (event) => {
     const module = await import("/systems/cyberpunk-red-core/modules/rolls/cpr-rolls.js");
     const { CPRSkillRoll } = module;
     if (!CPRSkillRoll) {
-      ui.notifications.error("CPRSkillRoll class not found.");
+      ui.notifications.error("CPRSkillRoll not found.");
       return;
     }
-    const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue + modifier);
+    const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue);
     const dummyEvent = new Event("click");
     const proceed = await rollInstance.handleRollDialog(dummyEvent, actor, skillItem);
     if (!proceed) return;
     await rollInstance.roll();
     rollResult = rollInstance;
   } catch (e) {
-    ui.notifications.error("Error importing CPRSkillRoll: " + e);
+    ui.notifications.error("Error during roll: " + e);
     return;
   }
 
@@ -149,17 +145,31 @@ document.addEventListener("click", async (event) => {
     ? `<span style="color:green;">✔ SUCCESS</span>`
     : `<span style="color:red;">✘ FAILURE</span>`;
 
+  const detailedReport = rollResult?.initialRoll !== undefined ? `
+    <details>
+      <summary>Details</summary>
+      <ul>
+        <li>d10 Roll: ${rollResult.initialRoll}</li>
+        <li>Attribute (${statKey}): ${statValue}</li>
+        <li>Skill (${skillName}): ${skillValue}</li>
+        <li>Modifiers: ${rollResult.totalMods()}</li>
+        <li>Luck used: ${rollResult.luck}</li>
+        <li>Final Result: ${rollResult.resultTotal}</li>
+      </ul>
+    </details>
+  ` : "";
+
   const messageContent = `
-    <div>
-      Test <strong>${skillName}</strong> rolled by <em>${actor.name}</em><br/>
-      Result: <strong>${finalTotal}</strong> vs DV <strong>${dv}</strong><br/>
-      ${resultText}
-    </div>
+Test <strong>${skillName}</strong> by <em>${actor.name}</em><br/>
+Result: <strong>${finalTotal}</strong>${!hideDv ? ` vs DV <strong>${dv}</strong>` : ""}<br/>
+${resultText}<br/>
+${flavor ? `<em>${flavor}</em><br/>` : ""}
+${detailedReport}
   `;
 
   ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ actor }),
-    content: flavor ? messageContent + `<em>${flavor}</em>` : messageContent
+    content: messageContent
   });
 });
 
@@ -176,7 +186,7 @@ Hooks.on("getSceneControlButtons", (controls) => {
     };
     controls.push(gmTools);
   }
-  if (window.GMTools && window.GMTools.tools) {
+  if (window.GMTools?.tools) {
     gmTools.tools = window.GMTools.tools;
   }
 });
