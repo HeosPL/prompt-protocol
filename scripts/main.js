@@ -1,19 +1,33 @@
+let CachedSkills = [];
+
+Hooks.once("ready", () => {
+  const skillSet = new Set();
+
+  for (const actor of game.actors.contents) {
+    for (const item of actor.items) {
+      if (item.type === "skill") {
+        skillSet.add(item.name);
+      }
+    }
+  }
+
+  CachedSkills = Array.from(skillSet).sort();
+});
+
+async function getAllSystemSkills() {
+  return CachedSkills;
+}
+
 // main.js – Prompt Protocol with GM Tools integration
 
-// Rejestrujemy globalne API GMTools już na etapie init
 Hooks.once("init", () => {
   window.GMTools = window.GMTools || {
     tools: [],
-    /**
-     * Registers a new GM tool.
-     * @param {Object} tool - { name, title, icon, onClick }
-     */
     registerTool: function(tool) {
       this.tools.push(tool);
     }
   };
 
-  // Rejestrujemy nasze narzędzie Prompt Protocol w GMTools
   GMTools.registerTool({
     name: "prompt-protocol",
     title: "Run Skill Test",
@@ -22,177 +36,133 @@ Hooks.once("init", () => {
   });
 });
 
-// Function to show the prompt dialog for running a skill test
 async function showPromptDialog() {
-  const actor = game.user.character;
-  if (!actor) {
-    ui.notifications.error("You don't have an assigned character!");
+  const skills = await getAllSystemSkills();
+
+  if (!skills.length) {
+    ui.notifications.error("No skills found.");
     return;
   }
-  const skills = actor.items.filter(i => i.type === "skill").map(i => i.name).sort();
-  if (skills.length === 0) {
-    ui.notifications.warn("Your character doesn't have any skills.");
-    return;
-  }
+
+  const skillOptions = skills.map(s => `<option value="${s}">${s}</option>`).join("");
+
   const content = `
     <form>
       <div class="form-group">
-        <label>Skill TEST:</label>
-        <select id="skill">
-          ${skills.map(s => `<option value="${s}">${s}</option>`).join("")}
-        </select>
+        <label for="skill">Select Skill:</label>
+        <select id="skill" name="skill">${skillOptions}</select>
       </div>
       <div class="form-group">
-        <label>DV (Difficulty Value):</label>
-        <input type="number" id="dv" value="15"/>
+        <label for="flavor">Optional Description:</label>
+        <input type="text" id="flavor" name="flavor" placeholder="e.g. Climbing wall in the rain"/>
       </div>
       <div class="form-group">
-        <label>Situational Description (optional):</label>
-        <input type="text" id="flavor" placeholder="e.g. Escape via roof under fire"/>
-      </div>
-      <div class="form-group">
-        <label><input type="checkbox" id="hideDv"/> Hide DV from players</label>
+        <label for="dv">Difficulty Value (DV):</label>
+        <input type="number" id="dv" name="dv" value="13"/>
       </div>
     </form>
   `;
+
   new Dialog({
-    title: "Run Skill Test",
+    title: "Skill Test Prompt",
     content,
     buttons: {
       ok: {
         label: "Send to Chat",
-        callback: (html) => {
-          const skill = html.find("#skill").val();
-          const dv = parseInt(html.find("#dv").val());
-          const flavor = html.find("#flavor").val()?.trim() || "";
-          const hideDv = html.find("#hideDv").is(":checked");
-          const message = `
-<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}" data-actor-id="${actor.id}">
-  🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
-  — Click to roll
-</button>
+        callback: html => {
+          const skill = html.find('[name="skill"]').val();
+          const flavor = html.find('[name="flavor"]').val()?.trim() || "";
+          const dv = parseInt(html.find('[name="dv"]').val()) || 0;
+
+          const messageContent = `
+            <div class="skill-test-prompt">
+              <strong>Skill Test:</strong> ${skill}<br/>              
+              <strong>DV:</strong> ${dv}<br/>
+              <button class="skill-roll-button" 
+                      data-skill="${skill}" 
+                      
+                      data-dv="${dv}">Roll</button>
+            </div>
           `;
+
           ChatMessage.create({
-            content: message,
-            flags: { "prompt-protocol": { skill, dv, flavor, actorId: actor.id, hideDv } }
+            user: game.user.id,
+            speaker: ChatMessage.getSpeaker(),
+            content: flavor ? messageContent + `<em>${flavor}</em>` : messageContent
           });
         }
       },
-      cancel: { label: "Cancel" }
-    }
+      cancel: {
+        label: "Cancel"
+      }
+    },
+    default: "ok"
   }).render(true);
 }
 
-// Event listener for clicking the chat button that executes the roll
 document.addEventListener("click", async (event) => {
   const button = event.target.closest(".skill-roll-button");
   if (!button) return;
 
   const skillName = button.dataset.skill;
   const dv = parseInt(button.dataset.dv);
-  const flavor = button.dataset.flavor;
-  const hideDv = button.dataset.hidedv === "true";
-  
-  // Zawsze pobieramy postać przypisaną do klikającego użytkownika – ignorujemy data-actor-id
+  const modifier = 0; // modifier removed
+
   const actor = game.user.character;
   if (!actor) {
     ui.notifications.warn("Character for roll not found!");
     return;
   }
-  
+
   const skillItem = actor.items.find(i => i.name === skillName && i.type === "skill");
   if (!skillItem) {
     ui.notifications.error(`Skill not found: ${skillName}`);
     return;
   }
-  
-  // Reszta kodu pozostaje bez zmian...
+
   const statKey = skillItem.system.stat;
   const statValue = actor.system.stats?.[statKey]?.value || 0;
   const skillValue = skillItem.system.level || 0;
   let rollResult;
-  
-  if (typeof skillItem.roll === "function") {
-    try {
-      rollResult = await skillItem.roll();
-    } catch (error) {
-      console.error("Error during roll:", error);
+
+  try {
+    const module = await import("/systems/cyberpunk-red-core/modules/rolls/cpr-rolls.js");
+    const { CPRSkillRoll } = module;
+    if (!CPRSkillRoll) {
+      ui.notifications.error("CPRSkillRoll class not found.");
       return;
     }
-  } else {
-    try {
-      const module = await import("/systems/cyberpunk-red-core/modules/rolls/cpr-rolls.js");
-      const { CPRSkillRoll } = module;
-      if (!CPRSkillRoll) {
-        ui.notifications.error("CPRSkillRoll class not found.");
-        return;
-      }
-      const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue);
-      const dummyEvent = new Event("click");
-      const proceed = await rollInstance.handleRollDialog(dummyEvent, actor, skillItem);
-      if (!proceed) return;
-      await rollInstance.roll();
-      rollResult = rollInstance;
-    } catch (e) {
-      ui.notifications.error("Error importing CPRSkillRoll: " + e);
-      return;
-    }
+    const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue + modifier);
+    const dummyEvent = new Event("click");
+    const proceed = await rollInstance.handleRollDialog(dummyEvent, actor, skillItem);
+    if (!proceed) return;
+    await rollInstance.roll();
+    rollResult = rollInstance;
+  } catch (e) {
+    ui.notifications.error("Error importing CPRSkillRoll: " + e);
+    return;
   }
-  
+
   const finalTotal = rollResult?.resultTotal ?? 0;
   const success = finalTotal > dv;
   const resultText = success
     ? `<span style="color:green;">✔ SUCCESS</span>`
     : `<span style="color:red;">✘ FAILURE</span>`;
-  
-  let detailedReport = "";
-  if (rollResult && rollResult.initialRoll !== undefined) {
-    const modsReport = (rollResult.mods && rollResult.mods.length)
-      ? `<ul>${rollResult.mods.map(mod => `<li>${mod.source}: ${mod.value > 0 ? '+' : ''}${mod.value}</li>`).join('')}</ul>`
-      : "No modifiers";
-    const additionalModsReport = (rollResult.additionalMods && rollResult.additionalMods.length)
-      ? `<ul>${rollResult.additionalMods.map(m => `<li>Additional mod: ${m}</li>`).join('')}</ul>`
-      : "";
-    const critReport = (rollResult.criticalRoll && rollResult.criticalRoll !== 0)
-      ? (rollResult.wasCritSuccess && rollResult.wasCritSuccess() 
-            ? `<li>Critical Success, bonus: ${rollResult.criticalRoll}</li>`
-            : (rollResult.wasCritFail && rollResult.wasCritFail() 
-                ? `<li>Critical Failure, penalty: ${rollResult.criticalRoll}</li>`
-                : ""))
-      : "";
-    detailedReport = `
-    <details>
-      <summary>Detailed Report</summary>
-      <ul>
-        <li>d10 Roll (result): ${rollResult.initialRoll}</li>
-        <li>Attribute Value (${statKey}): ${statValue}</li>
-        <li>Skill Level (${skillName}): ${skillValue}</li>
-        <li>Modifiers: ${modsReport} ${additionalModsReport}</li>
-        <li>Total Modifier: ${rollResult.totalMods()}</li>
-        <li>Luck used: ${rollResult.luck}</li>
-        ${critReport}
-        <li>Final Result: ${rollResult.resultTotal}</li>
-      </ul>
-    </details>
-    `;
-  }
-  
+
   const messageContent = `
-Test <strong>${skillName}</strong> rolled by <em>${actor.name}</em><br>
-Result: <strong>${finalTotal}</strong>${!hideDv ? ` vs DV <strong>${dv}</strong>` : ""}<br>
-${resultText}<br>
-${flavor ? `<em>${flavor}</em><br>` : ""}
-${detailedReport}
+    <div>
+      Test <strong>${skillName}</strong> rolled by <em>${actor.name}</em><br/>
+      Result: <strong>${finalTotal}</strong> vs DV <strong>${dv}</strong><br/>
+      ${resultText}
+    </div>
   `;
+
   ChatMessage.create({
     speaker: ChatMessage.getSpeaker({ actor }),
-    content: messageContent
+    content: flavor ? messageContent + `<em>${flavor}</em>` : messageContent
   });
 });
 
-
-
-// Modify Scene Controls to include a "GM Tools" category populated by GMTools.tools
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM) return;
   let gmTools = controls.find(c => c.name === "gm-tools");
