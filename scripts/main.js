@@ -35,7 +35,6 @@ Hooks.once("init", () => {
 });
 
 async function showPromptDialog() {
-
   const skills = await getAllSystemSkills();
   if (!skills.length) {
     ui.notifications.error("No skills found.");
@@ -76,8 +75,14 @@ async function showPromptDialog() {
           const flavor = html.find("#flavor").val()?.trim() || "";
           const hideDv = html.find("#hideDv").is(":checked");
 
+          const actorId = game.user.character?.id;
+          if (!actorId) {
+            ui.notifications.warn("No character assigned to user.");
+            return;
+          }
+
           const message = `
-<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}">
+<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}" data-actor-id="${actorId}">
   🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
   — Click to roll
 </button>
@@ -104,7 +109,7 @@ document.addEventListener("click", async (event) => {
   const hideDv = button.dataset.hidedv === "true";
   const actorId = button.dataset.actorId;
 
-  const actor = game.actors.get(actorId) || game.user.character;
+  const actor = game.actors.get(actorId);
   if (!actor) {
     ui.notifications.warn("Character not found!");
     return;
@@ -119,59 +124,87 @@ document.addEventListener("click", async (event) => {
   const statKey = skillItem.system.stat;
   const statValue = actor.system.stats?.[statKey]?.value || 0;
   const skillValue = skillItem.system.level || 0;
-  let rollResult;
+
+  // ✅ Pobieramy modyfikator dla danej umiejętności z bonuses
+  const skillBonus = actor?.overrides?.bonuses?.[skillName.toLowerCase()] ?? 0;
 
   try {
     const module = await import("/systems/cyberpunk-red-core/modules/rolls/cpr-rolls.js");
     const { CPRSkillRoll } = module;
-    if (!CPRSkillRoll) {
-      ui.notifications.error("CPRSkillRoll not found.");
-      return;
-    }
+
     const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue);
+
+    // 🔧 Aktualizujemy totalMods() z dodanym bonusowym modyfikatorem dla danej umiejętności
+    const originalTotalMods = rollInstance.totalMods.bind(rollInstance);
+    rollInstance.totalMods = function () {
+      return originalTotalMods() + skillBonus;  // Dodajemy bonus z `overrides.bonuses[skillName]`
+    };
+
     const dummyEvent = new Event("click");
     const proceed = await rollInstance.handleRollDialog(dummyEvent, actor, skillItem);
     if (!proceed) return;
+
+    const usedLuck = rollInstance.luck ?? 0;
+    const currentLuck = actor.system.stats.luck?.value || 0;
+
+    if (usedLuck > currentLuck) {
+      ui.notifications.warn(`Not enough Luck points. You have ${currentLuck}, tried to use ${usedLuck}.`);
+      return;
+    }
+
+    if (usedLuck > 0) {
+      const newLuck = Math.max(currentLuck - usedLuck, 0);
+      await actor.update({ "system.stats.luck.value": newLuck });
+    }
+
     await rollInstance.roll();
-    rollResult = rollInstance;
-  } catch (e) {
-    ui.notifications.error("Error during roll: " + e);
-    return;
-  }
 
-  const finalTotal = rollResult?.resultTotal ?? 0;
-  const success = finalTotal > dv;
-  const resultText = success
-    ? `<span style="color:green;">✔ SUCCESS</span>`
-    : `<span style="color:red;">✘ FAILURE</span>`;
+    const finalTotal = rollInstance.resultTotal;
+    const success = finalTotal > dv;
+    const resultText = success
+      ? `<span style="color:green;">✔ SUCCESS</span>`
+      : `<span style="color:red;">✘ FAILURE</span>`;
 
-  const detailedReport = rollResult?.initialRoll !== undefined ? `
-    <details>
-      <summary>Details</summary>
-      <ul>
-        <li>d10 Roll: ${rollResult.initialRoll}</li>
-        <li>Attribute (${statKey}): ${statValue}</li>
-        <li>Skill (${skillName}): ${skillValue}</li>
-        <li>Modifiers: ${rollResult.totalMods()}</li>
-        <li>Luck used: ${rollResult.luck}</li>
-        <li>Final Result: ${rollResult.resultTotal}</li>
-      </ul>
-    </details>
-  ` : "";
+    // Zaktualizuj wartość Total Mods w oknie rzutu
+    const totalModsValue = skillBonus; // Ustalona wartość z bonusów
+    const totalModsElement = document.querySelector(".total-mod-value");
+    if (totalModsElement) {
+      totalModsElement.textContent = `+${totalModsValue}`; // Wyświetl modyfikator w Total Mods
+    }
 
-  const messageContent = `
+    const detailedReport = `
+      <details>
+        <summary>Details</summary>
+        <ul>
+          <li>d10 Roll: ${rollInstance.initialRoll}</li>
+          <li>Attribute (${statKey}): ${statValue}</li>
+          <li>Skill (${skillName}): ${skillValue}</li>
+          <li>Modifiers (total): ${rollInstance.totalMods()}</li>
+          <li>Luck used: ${usedLuck}</li>
+          <li>Final Result: ${rollInstance.resultTotal}</li>
+        </ul>
+      </details>
+    `;
+
+    const messageContent = `
 Test <strong>${skillName}</strong> by <em>${actor.name}</em><br/>
 Result: <strong>${finalTotal}</strong>${!hideDv ? ` vs DV <strong>${dv}</strong>` : ""}<br/>
 ${resultText}<br/>
 ${flavor ? `<em>${flavor}</em><br/>` : ""}
 ${detailedReport}
-  `;
+    `;
 
-  ChatMessage.create({
-    speaker: ChatMessage.getSpeaker({ actor }),
-    content: messageContent
-  });
+    ChatMessage.create({
+      speaker: ChatMessage.getSpeaker({ actor }),
+      content: messageContent
+    });
+
+  } catch (e) {
+    console.error("ROLL ERROR:", e);
+    ui.notifications.error("Error during roll: " + e);
+  }
 });
+
 
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM) return;
