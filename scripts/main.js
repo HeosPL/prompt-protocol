@@ -75,14 +75,8 @@ async function showPromptDialog() {
           const flavor = html.find("#flavor").val()?.trim() || "";
           const hideDv = html.find("#hideDv").is(":checked");
 
-          const actorId = game.user.character?.id;
-          if (!actorId) {
-            ui.notifications.warn("No character assigned to user.");
-            return;
-          }
-
           const message = `
-<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}" data-actor-id="${actorId}">
+<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}">
   🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
   — Click to roll
 </button>
