@@ -18,7 +18,13 @@ async function getAllSystemSkills() {
   return CachedSkills;
 }
 
+// ✅ GLOBALNY DOSTĘP już w INIT, żeby działało np. z Active Tiles
 Hooks.once("init", () => {
+  window.PromptProtocol = {
+    showPrompt: showPromptDialog,
+    sendPromptToChat: createPromptMessage
+  };
+
   window.GMTools = window.GMTools || {
     tools: [],
     registerTool: function(tool) {
@@ -75,22 +81,27 @@ async function showPromptDialog() {
           const flavor = html.find("#flavor").val()?.trim() || "";
           const hideDv = html.find("#hideDv").is(":checked");
 
-          const message = `
-<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}">
-  🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
-  — Click to roll
-</button>
-          `;
-
-          ChatMessage.create({
-            content: message,
-            flags: { "prompt-protocol": { skill, dv, flavor, hideDv } }
-          });
+          createPromptMessage({ skill, dv, flavor, hideDv });
         }
       },
       cancel: { label: "Cancel" }
     }
   }).render(true);
+}
+
+// ✅ FUNKCJA DO WRZUCANIA PROMPTU NA CZAT PROGRAMOWO
+function createPromptMessage({ skill, dv = 15, flavor = "", hideDv = false }) {
+  const message = `
+<button class="skill-roll-button" data-skill="${skill}" data-dv="${dv}" data-hidedv="${hideDv}" data-flavor="${flavor}">
+  🎲 Test: <strong>${skill}</strong>${!hideDv ? ` (DV ${dv})` : ""} ${flavor ? `— <em>${flavor}</em>` : ""}
+  — Click to roll
+</button>
+  `;
+
+  ChatMessage.create({
+    content: message,
+    flags: { "prompt-protocol": { skill, dv, flavor, hideDv } }
+  });
 }
 
 document.addEventListener("click", async (event) => {
@@ -102,11 +113,10 @@ document.addEventListener("click", async (event) => {
   const flavor = button.dataset.flavor;
   const hideDv = button.dataset.hidedv === "true";
 
-  // Zamiast używać actorId z przycisku, bierzemy aktora przypisanego do gracza, który kliknął
+  // ✅ Gracze używają przypisanej postaci, MG – zaznaczonego tokena
   let actor = game.user.character;
 
   if (!actor) {
-    // Jeśli użytkownik to MG lub nie ma przypisanej postaci – użyj zaznaczonego tokena
     const controlled = canvas.tokens.controlled;
     if (controlled.length !== 1) {
       ui.notifications.warn("Select a single token to roll skill test.");
@@ -114,12 +124,11 @@ document.addEventListener("click", async (event) => {
     }
     actor = controlled[0].actor;
   }
-  
+
   if (!actor) {
     ui.notifications.error("No actor found for skill roll.");
     return;
   }
-  
 
   const skillItem = actor.items.find(i => i.name === skillName && i.type === "skill");
   if (!skillItem) {
@@ -131,7 +140,6 @@ document.addEventListener("click", async (event) => {
   const statValue = actor.system.stats?.[statKey]?.value || 0;
   const skillValue = skillItem.system.level || 0;
 
-  // ✅ Pobieramy modyfikator dla danej umiejętności z bonuses
   const skillBonus = actor?.overrides?.bonuses?.[skillName.toLowerCase()] ?? 0;
 
   try {
@@ -140,10 +148,9 @@ document.addEventListener("click", async (event) => {
 
     const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue);
 
-    // 🔧 Aktualizujemy totalMods() z dodanym bonusowym modyfikatorem dla danej umiejętności
     const originalTotalMods = rollInstance.totalMods.bind(rollInstance);
     rollInstance.totalMods = function () {
-      return originalTotalMods() + skillBonus;  // Dodajemy bonus z `overrides.bonuses[skillName]`
+      return originalTotalMods() + skillBonus;
     };
 
     const dummyEvent = new Event("click");
@@ -171,11 +178,10 @@ document.addEventListener("click", async (event) => {
       ? `<span style="color:green;">✔ SUCCESS</span>`
       : `<span style="color:red;">✘ FAILURE</span>`;
 
-    // Zaktualizuj wartość Total Mods w oknie rzutu
-    const totalModsValue = skillBonus; // Ustalona wartość z bonusów
+    const totalModsValue = skillBonus;
     const totalModsElement = document.querySelector(".total-mod-value");
     if (totalModsElement) {
-      totalModsElement.textContent = `+${totalModsValue}`; // Wyświetl modyfikator w Total Mods
+      totalModsElement.textContent = `+${totalModsValue}`;
     }
 
     const detailedReport = `
@@ -210,8 +216,6 @@ ${detailedReport}
     ui.notifications.error("Error during roll: " + e);
   }
 });
-
-
 
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM) return;
