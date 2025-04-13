@@ -148,9 +148,24 @@ document.addEventListener("click", async (event) => {
 
     const rollInstance = new CPRSkillRoll(statKey, statValue, skillItem.name, skillValue);
 
+    // 🩸 Dodajemy ranę jako modyfikator systemowy
+    const woundState = actor.system.derivedStats?.currentWoundState;
+    let woundPenalty = 0;
+    if (woundState === "seriouslyWounded") woundPenalty = -2;
+    if (woundState === "mortallyWounded") woundPenalty = -4;
+
+    if (!rollInstance.mods) rollInstance.mods = [];
+    if (woundPenalty !== 0) {
+      rollInstance.mods.push({
+        label: "Wound State Penalty",
+        value: woundPenalty,
+        type: "penalty"
+      });
+    }
+
     const originalTotalMods = rollInstance.totalMods.bind(rollInstance);
     rollInstance.totalMods = function () {
-      return originalTotalMods() + skillBonus;
+      return originalTotalMods() + skillBonus; // Wound penalty JUŻ jest w roll.mods
     };
 
     const dummyEvent = new Event("click");
@@ -178,10 +193,10 @@ document.addEventListener("click", async (event) => {
       ? `<span style="color:green;">✔ SUCCESS</span>`
       : `<span style="color:red;">✘ FAILURE</span>`;
 
-    const totalModsValue = skillBonus;
+    const totalModsValue = skillBonus; // Już bez rany, bo ta jest w roll.mods
     const totalModsElement = document.querySelector(".total-mod-value");
     if (totalModsElement) {
-      totalModsElement.textContent = `+${totalModsValue}`;
+      totalModsElement.textContent = `${totalModsValue >= 0 ? "+" : ""}${totalModsValue}`;
     }
 
     const detailedReport = `
@@ -216,6 +231,7 @@ ${detailedReport}
     ui.notifications.error("Error during roll: " + e);
   }
 });
+
 
 Hooks.on("getSceneControlButtons", (controls) => {
   if (!game.user.isGM) return;

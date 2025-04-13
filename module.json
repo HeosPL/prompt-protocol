@@ -2,7 +2,7 @@
   "name": "prompt-protocol",
   "title": "Cyberpunk RED - Prompt Protocol",
   "description": "Allows GMs to create clickable skill test prompts for players, complete with DV, situational details, and a detailed breakdown of modifiers.",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "author": "Waldemar 'Heos' Ładoń / ChatGPT",
   "compatibility": {
     "minimum": "11",
